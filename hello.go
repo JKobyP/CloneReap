@@ -108,7 +108,10 @@ func PREvent(payload []byte) error {
 
 	// Parse the output
 	clonePairs, err := cloneParse(string(out))
-	_ = clonePairs
+	fmt.Printf("\n***\tClone Pairs\t***\n")
+    for _, pair := range clonePairs {
+        fmt.Printf("%v\n", pair)
+    }
 	// Consider only the clones that are in the diff
 
 	return err
@@ -121,9 +124,17 @@ type Loc struct {
 	Line     uint
 }
 
+func (l Loc) String() string {
+    return fmt.Sprintf("%v:%v-%v", l.Filename, l.Byte, l.End)
+}
+
 type ClonePair struct {
 	First  Loc
 	Second Loc
+}
+
+func (c *ClonePair) String() string {
+    return  fmt.Sprintf("(1: %v; 2: %v)", c.First, c.Second)
 }
 
 func cloneParse(data string) ([]ClonePair, error) {
