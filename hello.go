@@ -1,18 +1,20 @@
 package main
 
 import (
-    "path"
-    "os"
-    "net/http"
-    "io"
+	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/google/go-github/github"
-	"gopkg.in/rjz/githubhook.v0"
 	"io"
 	"log"
 	"net/http"
-    "context"
+	"os"
+	"os/exec"
+	"path"
+	"strconv"
+	"strings"
+
+	"github.com/google/go-github/github"
+	"gopkg.in/rjz/githubhook.v0"
 )
 
 const (
@@ -34,77 +36,167 @@ func HelloServer(w http.ResponseWriter, req *http.Request) {
 func handleEvent(event string, payload []byte) {
 	switch event {
 	case "pull_request":
-		PREvent(payload)
+		err := PREvent(payload)
+		if err != nil {
+			log.Println(err)
+		}
 	case "push":
 		PushEvent(payload)
 	}
 }
 
-func PREvent(payload []byte) {
+func PREvent(payload []byte) error {
 	evt := github.PullRequestEvent{}
 	client := github.NewClient(nil)
 
-    // Unmarshal the PR Event
+	// Unmarshal the PR Event
 	if err := json.Unmarshal(payload, &evt); err != nil {
 		fmt.Println("Invalid JSON?", err)
-        return
+		return err
 	}
-    // Log basic info
-	log.Printf("Pull Request:\n\tAction:\n\t\t%v\n",*evt.Action)
-    log.Printf("\tRepo:\n\t\t%v\n", *evt.Repo.Name)
-    // Derive changed files
+	// Log basic info
+	log.Printf("Pull Request:\n\tAction:\n\t\t%v\n", *evt.Action)
+	log.Printf("\tRepo:\n\t\t%v\n", *evt.Repo.Name)
+	// Derive changed files
 	files, resp, err := client.PullRequests.ListFiles(context.TODO(),
 		*evt.Repo.Owner.Login, *evt.Repo.Name, evt.GetNumber(), nil)
 	if err != nil {
-        log.Printf("Error: %v\nResp: %v", err,resp)
-        return
+		log.Printf("Error: %v\nResp: %v", err, resp)
+		return err
 	}
-    // Print changed files
+	// Print changed files
 	for _, file := range files {
 		log.Printf("%v\n", *file.Filename)
 	}
-    url, resp, err := client.Repositories.GetArchiveLink(context.TODO(),
-        *evt.Repo.Owner.Login, *evt.Repo.Name, github.Tarball,
-        &github.RepositoryContentGetOptions{Ref:*evt.PullRequest.Head.Ref})
+	url, resp, err := client.Repositories.GetArchiveLink(context.TODO(),
+		*evt.Repo.Owner.Login, *evt.Repo.Name, github.Tarball,
+		&github.RepositoryContentGetOptions{Ref: *evt.PullRequest.Head.Ref})
 
-    filename := "head.tar.gz"
-    tmpdir := "tmp"
-    log.Printf("\nDownloading archive\n")
-    err := downloadFile(filename, url)
-    os.Mkdir(tmpdir, 0644)
-    untar := exec.Command("tar", "-xvf", filename, "-C", tmpdir)
-    err = untar.Start()
-    untar.Wait()
-    filename = path.Join(tmpdir, filename)
+	// Download the repository proposing to be merged
+	filename := "head.tar.gz"
+	tmpdir := "tmp"
+	log.Printf("\nDownloading archive\n")
+	err = downloadFile(filename, url.Path)
+	os.Mkdir(tmpdir, 0644)
+	untar := exec.Command("tar", "-xvf", filename, "-C", tmpdir)
+	err = untar.Start()
+	untar.Wait()
+	filename = path.Join(tmpdir, filename)
+	log.Printf("\nUnwrapped the archive\n")
 
-    log.Printf("\nUnwrapped the archive\n")
-    log.Printf("\nExecuting code clone detector\n")
-    ccfx := exec.Command("ccfx", "D", "cpp", "-d", filename)
-    out, err = exec.Command("ccfx", "P", "a.ccfxd")
+	// Find all clones in the repository
+	log.Printf("\nExecuting code clone detector\n")
+	ccfx := exec.Command("ccfx", "D", "cpp", "-d", filename)
+	err = ccfx.Start()
+	if err != nil {
+		return err
+	}
+	err = ccfx.Wait()
+	if err != nil {
+		return err
+	}
+	out, err := exec.Command("ccfx", "P", "a.ccfxd").Output()
+	if err != nil {
+		return err
+	}
+
+	// Parse the output
+	clonePairs, err := cloneParse(string(out))
+	_ = clonePairs
+	// Consider only the clones that are in the diff
+
+	return err
+}
+
+type Loc struct {
+	Filename string
+	Byte     uint
+	Line     uint
+}
+
+type ClonePair struct {
+	First  Loc
+	Second Loc
+}
+
+func cloneParse(data string) ([]ClonePair, error) {
+	files := make(map[int]string)
+	pairs := make([]ClonePair, 0)
+	readingSourceFiles := false
+	readingClones := false
+	for _, line := range strings.Split(data, "\n") {
+		if strings.ContainsAny(line, "{}") {
+			readingSourceFiles = false
+			readingClones = false
+			switch {
+			case strings.Contains(line, "source_files"):
+				readingSourceFiles = true
+			case strings.Contains(line, "clone_pairs"):
+				readingClones = true
+			}
+		} else if readingSourceFiles {
+			words := strings.Split(line, "\t")
+			fileid, err := strconv.Atoi(words[0])
+			if err != nil {
+				log.Println(err)
+			}
+			files[fileid] = strings.TrimSpace(words[1])
+		} else if readingClones {
+			words := strings.Split(line, "\t")
+			if len(words) < 3 {
+				return pairs, fmt.Errorf("Error parsing clones")
+			}
+			_, first, second := words[0], words[1], words[2]
+			l1, err := parseLoc(first, files)
+			if err != nil {
+				return pairs, err
+			}
+			l2, err := parseLoc(second, files)
+			if err != nil {
+				return pairs, err
+			}
+			pairs = append(pairs, ClonePair{First: l1, Second: l2})
+		}
+	}
+	return pairs, nil
+}
+
+func parseLoc(desc string, files map[int]string) (Loc, error) {
+	str := strings.Split(desc, ".")
+	fileId, err := strconv.Atoi(str[0])
+	if err != nil {
+		return Loc{}, err
+	}
+	bytenum, err := strconv.Atoi(str[1])
+	if err != nil {
+		return Loc{}, err
+	}
+	filename := files[fileId]
+	return Loc{Filename: filename, Byte: uint(bytenum)}, nil
 }
 
 func downloadFile(filepath string, url string) (err error) {
-  // Create the file
-  out, err := os.Create(filepath)
-  if err != nil  {
-    return err
-  }
-  defer out.Close()
+	// Create the file
+	out, err := os.Create(filepath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
 
-  // Get the data
-  resp, err := http.Get(url)
-  if err != nil {
-    return err
-  }
-  defer resp.Body.Close()
+	// Get the data
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
 
-  // Writer the body to file
-  _, err = io.Copy(out, resp.Body)
-  if err != nil  {
-    return err
-  }
+	// Writer the body to file
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		return err
+	}
 
-  return nil
+	return nil
 }
 
 func PushEvent(payload []byte) {
