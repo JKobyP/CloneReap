@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+    "path"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
-	"path"
 	"strconv"
 	"strings"
 
@@ -74,26 +74,32 @@ func PREvent(payload []byte) error {
 
 	// Download the repository proposing to be merged
 	filename := "head.tar.gz"
-	tmpdir := "tmp"
-	log.Printf("\nDownloading archive\n")
-	err = downloadFile(filename, url.Path)
-	os.Mkdir(tmpdir, 0644)
+    wd,err := os.Getwd()
+	tmpdir := path.Join(wd,"tmp")
+	log.Printf("\nDownloading archive from %v\n", url.String())
+    err = downloadFile(filename,url.String())
+	if err != nil {
+        return fmt.Errorf("%v while downloading from url: %v", err,url.Path)
+	}
+	os.Mkdir(tmpdir, 0775)
 	untar := exec.Command("tar", "-xvf", filename, "-C", tmpdir)
 	err = untar.Start()
+	if err != nil {
+		return fmt.Errorf("%v while executing %v", err,untar)
+	}
 	untar.Wait()
-	filename = path.Join(tmpdir, filename)
 	log.Printf("\nUnwrapped the archive\n")
 
 	// Find all clones in the repository
 	log.Printf("\nExecuting code clone detector\n")
-	ccfx := exec.Command("ccfx", "D", "cpp", "-d", filename)
+	ccfx := exec.Command("ccfx", "D", "cpp", "-d", tmpdir)
 	err = ccfx.Start()
 	if err != nil {
-		return err
+		return fmt.Errorf("%v while executing %v", err, ccfx)
 	}
 	err = ccfx.Wait()
 	if err != nil {
-		return err
+		return fmt.Errorf("%v while executing %v", err, ccfx)
 	}
 	out, err := exec.Command("ccfx", "P", "a.ccfxd").Output()
 	if err != nil {
