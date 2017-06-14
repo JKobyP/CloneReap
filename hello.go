@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
-    "path"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"strconv"
 	"strings"
 
@@ -74,18 +74,18 @@ func PREvent(payload []byte) error {
 
 	// Download the repository proposing to be merged
 	filename := "head.tar.gz"
-    wd,err := os.Getwd()
-	tmpdir := path.Join(wd,"tmp")
+	wd, err := os.Getwd()
+	tmpdir := path.Join(wd, "tmp")
 	log.Printf("\nDownloading archive from %v\n", url.String())
-    err = downloadFile(filename,url.String())
+	err = downloadFile(filename, url.String())
 	if err != nil {
-        return fmt.Errorf("%v while downloading from url: %v", err,url.Path)
+		return fmt.Errorf("%v while downloading from url: %v", err, url.Path)
 	}
 	os.Mkdir(tmpdir, 0775)
 	untar := exec.Command("tar", "-xvf", filename, "-C", tmpdir)
 	err = untar.Start()
 	if err != nil {
-		return fmt.Errorf("%v while executing %v", err,untar)
+		return fmt.Errorf("%v while executing %v", err, untar)
 	}
 	untar.Wait()
 	log.Printf("\nUnwrapped the archive\n")
@@ -117,6 +117,7 @@ func PREvent(payload []byte) error {
 type Loc struct {
 	Filename string
 	Byte     uint
+	End      uint
 	Line     uint
 }
 
@@ -173,12 +174,17 @@ func parseLoc(desc string, files map[int]string) (Loc, error) {
 	if err != nil {
 		return Loc{}, err
 	}
-	bytenum, err := strconv.Atoi(str[1])
+	interval := strings.Split(str[1], "-")
+	bytenum, err := strconv.Atoi(interval[0])
+	end, err2 := strconv.Atoi(interval[1])
 	if err != nil {
 		return Loc{}, err
+	} else if err2 != nil {
+		return Loc{}, err2
 	}
+
 	filename := files[fileId]
-	return Loc{Filename: filename, Byte: uint(bytenum)}, nil
+	return Loc{Filename: filename, Byte: uint(bytenum), End: uint(end)}, nil
 }
 
 func downloadFile(filepath string, url string) (err error) {
