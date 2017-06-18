@@ -73,7 +73,7 @@ func getFilesAndRepo(client *github.Client,
 	}
 	// Print changed files
 	for _, file := range files {
-		log.Printf("%Changed: v\n", *file.Filename)
+		log.Printf("Changed: %v\n", *file.Filename)
 	}
 	url, _, err := client.Repositories.GetArchiveLink(context.TODO(),
 		*evt.Repo.Owner.Login, *evt.Repo.Name, github.Tarball,
@@ -149,14 +149,16 @@ func PREvent(payload []byte) error {
 	for _, pair := range clonePairs {
 		fmt.Printf("%v\n", pair)
 	}
+	fmt.Printf("\n***\tChanged files\t***\n")
+	for _, cfile := range files {
+		fmt.Printf("%v\n", pair)
+	}
 
 	// Consider only the clones that are in the diff
 	relPairs := make([]clone.ClonePair, 0)
 	for _, pair := range clonePairs {
 		contains := false
 		for _, cfile := range files {
-			// TODO match CommitFile paths to absolute path returned from
-			// clonedetector
 			if path.Join(root, cfile.GetFilename()) == pair.First.Filename {
 				contains = true
 				break
@@ -166,6 +168,7 @@ func PREvent(payload []byte) error {
 			relPairs = append(relPairs, pair)
 		}
 	}
+
 	return err
 }
 
