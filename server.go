@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"path"
-	"strings"
 
 	"github.com/google/go-github/github"
 	"github.com/jkobyp/CloneReap/clone"
@@ -80,7 +80,7 @@ func getFilesAndRepo(client *github.Client,
 		&github.RepositoryContentGetOptions{Ref: *evt.PullRequest.Head.Ref})
 
 	// Download the repository proposing to be merged
-	filename := path.Base(url.String())
+	filename := "head.tar.gz"
 	log.Printf("\nDownloading archive from %v\n", url.String())
 	err = downloadFile(filename, url.String())
 	if err != nil {
@@ -94,16 +94,19 @@ func getFilesAndRepo(client *github.Client,
 // the clone detector, and stores the results
 func PREvent(payload []byte) error {
 	client := github.NewClient(nil)
+	// unmarshal the PR Hook
 	evt, err := processPRHook(payload)
 	if err != nil {
 		return err
 	}
 
+	// get a list of changed files and download the new repo
 	files, filename, err := getFilesAndRepo(client, &evt)
 	if err != nil {
 		return err
 	}
 
+	// extract the repo
 	wd, err := os.Getwd()
 	tmpdir := path.Join(wd, "tmp")
 	os.Mkdir(tmpdir, 0775)
@@ -112,10 +115,17 @@ func PREvent(payload []byte) error {
 	if err != nil {
 		return fmt.Errorf("%v while executing %v", err, untar)
 	}
-	root := path.Join(tmpdir, strings.Split(filename, ".")[0])
-	log.Printf("Root: %v", root)
 	untar.Wait()
 	log.Printf("\nUnwrapped the archive\n")
+
+	// get the root directory
+	contents, err := ioutil.ReadDir(tmpdir)
+	if len(contents) != 1 {
+		return fmt.Errorf("wrong number of items in the tmp directory: expected 1")
+	} else if err != nil {
+		return err
+	}
+	root := path.Join(tmpdir, contents[0].Name())
 
 	// Find all clones in the repository
 	log.Printf("\nExecuting code clone detector\n")
@@ -147,9 +157,10 @@ func PREvent(payload []byte) error {
 		for _, cfile := range files {
 			// TODO match CommitFile paths to absolute path returned from
 			// clonedetector
-			_ = cfile
-			contains = true
-			break
+			if path.Join(root, cfile.GetFilename()) == pair.First.Filename {
+				contains = true
+				break
+			}
 		}
 		if contains {
 			relPairs = append(relPairs, pair)
