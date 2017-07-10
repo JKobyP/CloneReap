@@ -13,6 +13,7 @@ import (
 	"path"
 
 	"github.com/google/go-github/github"
+	"github.com/jkobyp/clonereap/api"
 	"github.com/jkobyp/clonereap/clone"
 	"github.com/pkg/errors"
 	"gopkg.in/rjz/githubhook.v0"
@@ -88,6 +89,17 @@ func getFilesAndRepo(client *github.Client,
 	return files, filename, nil
 }
 
+func extract(filename string) (string, error) {
+	wd, err := os.Getwd()
+	tmpdir := path.Join(wd, "tmp")
+	os.Mkdir(tmpdir, 0775)
+	untar := exec.Command("tar", "-xvf", filename, "-C", tmpdir)
+	err = untar.Start()
+	untar.Wait()
+	log.Printf("\nUnwrapped the archive\n")
+	return tmpdir, err
+}
+
 // PREvent takes the byteslice of json encoded
 // payload delivered with the event hook, triggers
 // the clone detector, and stores the results
@@ -106,16 +118,10 @@ func PREvent(payload []byte) error {
 	}
 
 	// extract the repo to a tmp directory
-	wd, err := os.Getwd()
-	tmpdir := path.Join(wd, "tmp")
-	os.Mkdir(tmpdir, 0775)
-	untar := exec.Command("tar", "-xvf", filename, "-C", tmpdir)
-	err = untar.Start()
+	tmpdir, err := extract(filename)
 	if err != nil {
-		return fmt.Errorf("%v while executing %v", err, untar)
+		return errors.Wrap(err, "while extracting repo")
 	}
-	untar.Wait()
-	log.Printf("\nUnwrapped the archive\n")
 
 	// get the root directory
 	contents, err := ioutil.ReadDir(tmpdir)
@@ -126,7 +132,7 @@ func PREvent(payload []byte) error {
 	}
 	root := path.Join(tmpdir, contents[0].Name())
 
-	clonePairs, err = clone.NewDetector().Detect(root)
+	clonePairs, err := clone.NewDetector().Detect(root)
 	if err != nil {
 		return err
 	}
@@ -137,7 +143,7 @@ func PREvent(payload []byte) error {
 	}
 	fmt.Printf("\n***\tChanged files \t***\n")
 	for _, cfile := range files {
-		fmt.Printf("%v\n", pair)
+		fmt.Printf("%v\n", cfile)
 	}
 
 	// Consider only the clones that are in the diff
@@ -155,7 +161,7 @@ func PREvent(payload []byte) error {
 		}
 	}
 
-	api.SaveClones(relPairs)
+	api.SavePR(evt.PullRequest, relPairs)
 
 	return err
 }

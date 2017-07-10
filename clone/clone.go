@@ -11,7 +11,6 @@ type Loc struct {
 	Filename string
 	Byte     uint
 	End      uint
-	Line     uint
 }
 
 func (l Loc) String() string {
