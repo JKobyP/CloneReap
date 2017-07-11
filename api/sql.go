@@ -180,7 +180,6 @@ func getPrs(fullname string) ([]int, error) {
 	return ids, nil
 }
 
-// TODO unfinished
 func getClones(id int) ([]clone.ClonePair, error) {
 	db, err := GetDB()
 	if err != nil {
@@ -188,6 +187,8 @@ func getClones(id int) ([]clone.ClonePair, error) {
 	}
 
 	clones := []clone.ClonePair{}
+	ones := []int{}
+	twos := []int{}
 
 	rows, err := db.Query("SELECT loc_one, loc_two FROM clones WHERE prid=?", id)
 	if err != nil {
@@ -200,10 +201,32 @@ func getClones(id int) ([]clone.ClonePair, error) {
 		if err := rows.Scan(&loc_one, &loc_two); err != nil {
 			return nil, err
 		}
+		ones = append(ones, loc_one)
+		twos = append(twos, loc_two)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+
+	for i := range ones {
+		getLoc := func(id int) (clone.Loc, error) {
+			var path string
+			var start_byte, end_byte int
+			err := db.QueryRow("SELECT path,start_byte,end_byte FROM locations WHERE id=?",
+				id).Scan(&path, &start_byte, &end_byte)
+			return clone.Loc{Filename: path, Byte: uint(start_byte), End: uint(end_byte)}, err
+		}
+		l1, err := getLoc(ones[i])
+		if err != nil {
+			return nil, err
+		}
+		l2, err := getLoc(twos[i])
+		if err != nil {
+			return nil, err
+		}
+		clones = append(clones, clone.ClonePair{l1, l2})
+	}
+
 	return clones, nil
 }
 
