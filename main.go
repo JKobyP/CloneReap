@@ -10,5 +10,5 @@ func main() {
 	http.HandleFunc("/", reactServer)
 	http.HandleFunc("/api/", api.Handler)
 	api.Init()
-	log.Fatal(http.ListenAndServe(":80", nil))
+	log.Fatal(http.ListenAndServe(":8000", nil))
 }

@@ -1,41 +1,61 @@
 package api
 
 import (
-	"io"
+	"fmt"
 
 	"github.com/google/go-github/github"
 	"github.com/jkobyp/clonereap/clone"
 	"github.com/pkg/errors"
 )
 
-type file struct {
-	path    string
-	content []byte
+type File struct {
+	Path    string `json:"path"`
+	Content []byte `json:"content"`
 }
 
-func SavePR(pr *github.PullRequest, clones []clone.ClonePair, files io.Reader) error {
-	model, err := GetModel()
+type Pr struct {
+	Id     int               `json:"id"`
+	Clones []clone.ClonePair `json:"clones"`
+	Files  []File            `json:"files"`
+}
+
+func SavePrEvent(pr *github.PullRequest, clones []clone.ClonePair, files []File) error {
+	fullname := pr.Base.Repo.GetFullName()
+	err := saveRepo(fullname)
 	if err != nil {
 		return errors.Wrap(err, "saving pr")
 	}
-	err = model.SavePR(pr.GetID(), clones)
+	err = savePr(fullname, pr.GetID())
 	if err != nil {
 		return errors.Wrap(err, "saving pr")
 	}
-	err = model.SaveCFiles(pr.GetID())
+	err = saveFiles(pr.GetID(), files)
 	if err != nil {
 		return errors.Wrap(err, "saving pr")
 	}
-	err = model.SaveRepo(pr.Head.Repo.GetFullName(), pr.GetID())
+	err = saveClones(pr.GetID(), clones)
 	return err
 }
 
-func RetrievePR(prid int) ([]clone.ClonePair, error) {
-	model, err := GetModel()
-	if err != nil {
-		return nil, errors.Wrap(err, "getting pr")
-	}
+func RetrievePrs(user, project string) ([]Pr, error) {
+	prs := []Pr{}
 
-	clones, err := model.RetrievePR(prid)
-	return clones, err
+	fullname := fmt.Sprintf("%s/%s", user, project)
+	ids, err := getPrs(fullname)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		clones, err := getClones(id)
+		if err != nil {
+			return nil, err
+		}
+		files, err := getFiles(id)
+		if err != nil {
+			return nil, err
+		}
+		pr := Pr{Id: id, Clones: clones, Files: files}
+		prs = append(prs, pr)
+	}
+	return prs, err
 }

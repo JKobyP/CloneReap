@@ -2,8 +2,10 @@ package api
 
 import (
 	"database/sql"
-	_ "github.com/mattn/go-sqlite3"
 	"os"
+
+	"github.com/jkobyp/clonereap/clone"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 const (
@@ -46,7 +48,6 @@ func Init() (*sql.DB, error) {
 		createFiles := `
 		CREATE TABLE files (path VARCHAR(4096) NOT NULL,
 							prid INTEGER NOT NULL,
-							repo VARCHAR(4096), 
 							file TEXT,
 							PRIMARY KEY(path,prid),
 							FOREIGN KEY(repo) REFERENCES repos (name));
@@ -107,17 +108,127 @@ func savePr(repo string, pr int) error {
 	return err
 }
 
-func saveFiles(repo string, pr int, files []file) error {
+func saveFiles(pr int, files []File) error {
 	db, err := GetDB()
 	if err != nil {
 		return err
 	}
 	for _, f := range files {
-		_, err = db.Exec("insert into files(path, prid, repo, file) values(?,?,?,?)",
-			f.path, pr, repo, f.content)
+		_, err = db.Exec("insert into files(path, prid, file) values(?,?,?)",
+			f.Path, pr, f.Content)
 		if err != nil {
 			return err
 		}
 	}
-	return err
+	return nil
+}
+
+func saveClones(pr int, clones []clone.ClonePair) error {
+	db, err := GetDB()
+	if err != nil {
+		return err
+	}
+	for _, c := range clones {
+		saveLoc := func(db *sql.DB, pr int, loc clone.Loc) (int64, error) {
+			result, err := db.Exec(`INSERT INTO 
+						  locations(path, prid, start_byte, end_byte)
+						  values(?,?,?,?)`, loc.Filename, pr, loc.Byte, loc.End)
+			if err != nil {
+				return 0, err
+			}
+			insId, err := result.LastInsertId()
+			return insId, err
+		}
+		insId, err := saveLoc(db, pr, c.First)
+		if err != nil {
+			return err
+		}
+		insId2, err := saveLoc(db, pr, c.Second)
+		if err != nil {
+			return err
+		}
+		_, err = db.Exec("INSERT INTO clones(loc_one, loc_two) values(?,?)", insId, insId2)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func getPrs(fullname string) ([]int, error) {
+	db, err := GetDB()
+	if err != nil {
+		return nil, err
+	}
+
+	ids := []int{}
+	rows, err := db.Query("SELECT prid FROM pr_repo WHERE repo=?", fullname)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+// TODO unfinished
+func getClones(id int) ([]clone.ClonePair, error) {
+	db, err := GetDB()
+	if err != nil {
+		return nil, err
+	}
+
+	clones := []clone.ClonePair{}
+
+	rows, err := db.Query("SELECT loc_one, loc_two FROM clones WHERE prid=?", id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var loc_one int
+		var loc_two int
+		if err := rows.Scan(&loc_one, &loc_two); err != nil {
+			return nil, err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return clones, nil
+}
+
+func getFiles(id int) ([]File, error) {
+	db, err := GetDB()
+	if err != nil {
+		return nil, err
+	}
+
+	files := []File{}
+	rows, err := db.Query("SELECT path,file FROM files WHERE prid=?", id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var path string
+		var file []byte
+		if err := rows.Scan(&path, &file); err != nil {
+			return nil, err
+		}
+		files = append(files, File{Path: path, Content: file})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return files, nil
 }
