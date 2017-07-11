@@ -7,8 +7,8 @@ import (
 )
 
 func main() {
-	http.HandleFunc("/", reactServer)
+	http.HandleFunc("/", HookServer)
 	http.HandleFunc("/api/", api.Handler)
 	api.Init()
-	log.Fatal(http.ListenAndServe(":80", nil))
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
