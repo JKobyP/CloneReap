@@ -50,21 +50,21 @@ func Init() (*sql.DB, error) {
 							prid INTEGER NOT NULL,
 							file TEXT,
 							PRIMARY KEY(path,prid),
-							FOREIGN KEY(repo) REFERENCES repos (name));
+							FOREIGN KEY(prid) REFERENCES pr_repo (pr));
 		`
 
 		createLocs := `
-		CREATE TABLE locations (ID int NOT NULL AUTO_INCREMENT,
+		CREATE TABLE locations (ID integer PRIMARY KEY AUTOINCREMENT,
 							path VARCHAR(4096) NOT NULL,
 							prid INTEGER NOT NULL,
 							start_byte INTEGER, 
 							end_byte INTEGER,
 							FOREIGN KEY(path, prid) REFERENCES files (path, prid)
-							PRIMARY KEY (ID));
+							);
 		`
 		createClones := `
-		CREATE TABLE clones (loc_one int
-							 loc_two int
+		CREATE TABLE clones (loc_one integer,
+							 loc_two integer,
 							 FOREIGN KEY(loc_one, loc_two) REFERENCES locations (ID, ID));
 		`
 
