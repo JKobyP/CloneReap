@@ -29,7 +29,7 @@ func PRHandler(w http.ResponseWriter, req *http.Request) {
 	project := components[1]
 	prs, err := RetrievePrs(user, project)
 	if err != nil {
-		log.Printf("not found")
+		log.Printf("%s", err)
 		http.NotFound(w, req)
 	}
 	bytes, err := json.Marshal(prs)

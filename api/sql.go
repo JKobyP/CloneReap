@@ -40,8 +40,8 @@ func Init() (*sql.DB, error) {
 
 		createPRs := `
 		CREATE TABLE pr_repo (  repo VARCHAR(4096),
-								pr INTEGER NOT NULL,
-								PRIMARY KEY(pr)
+								prid INTEGER NOT NULL,
+								PRIMARY KEY(prid)
 								FOREIGN KEY(repo) REFERENCES repos(name))
 		`
 
@@ -50,7 +50,7 @@ func Init() (*sql.DB, error) {
 							prid INTEGER NOT NULL,
 							file TEXT,
 							PRIMARY KEY(path,prid),
-							FOREIGN KEY(prid) REFERENCES pr_repo (pr));
+							FOREIGN KEY(prid) REFERENCES pr_repo (prid));
 		`
 
 		createLocs := `
@@ -65,6 +65,8 @@ func Init() (*sql.DB, error) {
 		createClones := `
 		CREATE TABLE clones (loc_one integer,
 							 loc_two integer,
+							 prid integer,
+							 FOREIGN KEY(prid) REFERENCES pr_repo(prid),
 							 FOREIGN KEY(loc_one, loc_two) REFERENCES locations (ID, ID));
 		`
 
@@ -104,7 +106,7 @@ func savePr(repo string, pr int) error {
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec("insert into pr_repo(repo, pr) values(?,?)", repo, pr)
+	_, err = db.Exec("insert into pr_repo(repo, prid) values(?,?)", repo, pr)
 	return err
 }
 
@@ -147,7 +149,7 @@ func saveClones(pr int, clones []clone.ClonePair) error {
 		if err != nil {
 			return err
 		}
-		_, err = db.Exec("INSERT INTO clones(loc_one, loc_two) values(?,?)", insId, insId2)
+		_, err = db.Exec("INSERT INTO clones(loc_one, loc_two, prid) values(?,?,?)", insId, insId2, pr)
 		if err != nil {
 			return err
 		}
