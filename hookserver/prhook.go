@@ -148,10 +148,12 @@ func PREvent(payload []byte) error {
 
 	// Consider only the clones that are in the diff
 	relPairs := make([]clone.ClonePair, 0)
+	relFiles := make(map[string]bool)
 	for _, pair := range clonePairs {
 		contains := false
 		for _, cfile := range files {
 			if path.Join(root, cfile.GetFilename()) == pair.First.Filename {
+				relFiles[pair.First.Filename] = true
 				contains = true
 				break
 			}
@@ -161,9 +163,24 @@ func PREvent(payload []byte) error {
 		}
 	}
 
-	api.SavePR(evt.PullRequest, relPairs)
+	// Create api.File for reach relevant clonepair
+	fs := processFileset(relFiles)
+
+	api.SavePrEvent(evt.PullRequest, relPairs, fs)
 
 	return err
+}
+
+func processFileset(fileset map[string]bool) []api.File {
+	ret := []api.File{}
+	for file := range fileset {
+		content, err := ioutil.ReadFile(file)
+		if err != nil {
+			log.Println("Error reading file")
+		}
+		ret = append(ret, api.File{Path: file, Content: content})
+	}
+	return ret
 }
 
 func downloadFile(filepath string, url string) (err error) {
