@@ -166,9 +166,17 @@ func PREvent(payload []byte) error {
 	// Create api.File for reach relevant clonepair
 	fs := processFileset(relFiles)
 
-	api.SavePrEvent(evt.PullRequest, relPairs, fs)
+	err = api.SavePrEvent(evt.PullRequest, relPairs, fs)
+    if err != nil {
+        log.Printf("%s", err)
+    }
+    err = cleanTmp(tmpdir)
 
 	return err
+}
+
+func cleanTmp(dir string) error {
+    return os.RemoveAll(dir)
 }
 
 func processFileset(fileset map[string]bool) []api.File {
