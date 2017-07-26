@@ -32,6 +32,9 @@ func PRHandler(w http.ResponseWriter, req *http.Request) {
 		log.Printf("%s", err)
 		http.NotFound(w, req)
 	}
+    for i := range prs {
+        log.Printf("Pr ID: %d", prs[i].Id)
+    }
 	bytes, err := json.Marshal(prs)
 	if err != nil {
 		log.Printf("Json error")

@@ -97,7 +97,7 @@ func saveRepo(repo string) error {
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec("insert into repos(name) values(?)", repo)
+	_, err = db.Exec("insert or ignore into repos(name) values(?)", repo)
 	return err
 }
 
@@ -106,7 +106,7 @@ func savePr(repo string, pr int) error {
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec("insert into pr_repo(repo, prid) values(?,?)", repo, pr)
+	_, err = db.Exec("insert or ignore into pr_repo(repo, prid) values(?,?)", repo, pr)
 	return err
 }
 
@@ -116,7 +116,7 @@ func saveFiles(pr int, files []File) error {
 		return err
 	}
 	for _, f := range files {
-		_, err = db.Exec("insert into files(path, prid, file) values(?,?,?)",
+		_, err = db.Exec("insert or ignore into files(path, prid, file) values(?,?,?)",
 			f.Path, pr, f.Content)
 		if err != nil {
 			return err
@@ -132,7 +132,7 @@ func saveClones(pr int, clones []clone.ClonePair) error {
 	}
 	for _, c := range clones {
 		saveLoc := func(db *sql.DB, pr int, loc clone.Loc) (int64, error) {
-			result, err := db.Exec(`INSERT INTO 
+			result, err := db.Exec(`INSERT or IGNORE INTO
 						  locations(path, prid, start_byte, end_byte)
 						  values(?,?,?,?)`, loc.Filename, pr, loc.Byte, loc.End)
 			if err != nil {
@@ -149,7 +149,7 @@ func saveClones(pr int, clones []clone.ClonePair) error {
 		if err != nil {
 			return err
 		}
-		_, err = db.Exec("INSERT INTO clones(loc_one, loc_two, prid) values(?,?,?)", insId, insId2, pr)
+		_, err = db.Exec("INSERT or IGNORE INTO clones(loc_one, loc_two, prid) values(?,?,?)", insId, insId2, pr)
 		if err != nil {
 			return err
 		}
