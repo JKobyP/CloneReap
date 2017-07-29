@@ -9,11 +9,11 @@ clonereap depends on its partner project,
 [clone-browser](https://github.com/jkobyp/clone-browser) as its frontend.
 
 
-To build:
-download github.com/jkobyp/clone-browser
-npm install and npm run build
-copy the dist folder to the project directory
-make sure index.html contains:
+### To build:
+1. download github.com/jkobyp/clone-browser
+2. `npm install` and `npm run build`
+3. copy the dist folder to the project directory
+4. make sure index.html contains:
 ```html
 ...
 <body>
@@ -22,4 +22,4 @@ make sure index.html contains:
 </body>
 ```
 
-build and run the project
+5. build and run the project
