@@ -153,7 +153,7 @@ func PREvent(payload []byte) error {
 		contains := false
 		for _, cfile := range files {
 			if path.Join(root, cfile.GetFilename()) == pair.First.Filename {
-				relFiles[pair.First.Filename] = true
+				relFiles[cfile.GetFilename()] = true
 				contains = true
 				break
 			}
@@ -164,9 +164,10 @@ func PREvent(payload []byte) error {
 	}
 
 	// Create api.File for reach relevant clonepair
-	fs := processFileset(relFiles)
+	fs := processFileset(root, relFiles)
+    prs := stripRoot(root, relPairs)
 
-	err = api.SavePrEvent(evt.PullRequest, relPairs, fs)
+	err = api.SavePrEvent(evt.PullRequest, prs, fs)
     if err != nil {
         log.Printf("%s", err)
     }
@@ -179,10 +180,20 @@ func cleanTmp(dir string) error {
     return os.RemoveAll(dir)
 }
 
-func processFileset(fileset map[string]bool) []api.File {
-	ret := []api.File{}
+func stripRoot(root string, pairs []clone.ClonePair) []clone.ClonePair {
+    ret := make([]clone.ClonePair, len(pairs))
+    for i, pair := range pairs {
+        pair.First.Filename = pair.First.Filename[len(root):]
+        pair.Second.Filename = pair.Second.Filename[len(root):]
+        ret[i] = pair
+    }
+    return ret
+}
+
+func processFileset(root string, fileset map[string]bool) []api.File {
+	ret := make([]api.File, 0)
 	for file := range fileset {
-		content, err := ioutil.ReadFile(file)
+		content, err := ioutil.ReadFile(path.Join(root,file))
 		if err != nil {
 			log.Println("Error reading file")
 		}
