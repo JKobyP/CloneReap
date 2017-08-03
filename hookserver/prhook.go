@@ -143,17 +143,18 @@ func PREvent(payload []byte) error {
 	}
 	fmt.Printf("\n***\tChanged files \t***\n")
 	for _, cfile := range files {
-		fmt.Printf("%v\n", cfile)
+		fmt.Printf("%v\n", cfile.GetFilename())
 	}
 
 	// Consider only the clones that are in the diff
-	relPairs := make([]clone.ClonePair, 0)
-	relFiles := make(map[string]bool)
+	relPairs := make([]clone.ClonePair, 0) // absolute
+	relFiles := make(map[string]bool) // absolute
 	for _, pair := range clonePairs {
 		contains := false
 		for _, cfile := range files {
 			if path.Join(root, cfile.GetFilename()) == pair.First.Filename {
-				relFiles[cfile.GetFilename()] = true
+				relFiles[pair.First.Filename] = true
+				relFiles[pair.Second.Filename] = true
 				contains = true
 				break
 			}
@@ -164,8 +165,8 @@ func PREvent(payload []byte) error {
 	}
 
 	// Create api.File for reach relevant clonepair
-	fs := processFileset(root, relFiles)
-    prs := stripRoot(root, relPairs)
+	fs := processFileset(root, relFiles) // relative
+    prs := stripRoot(root, relPairs)    // relative
 
 	err = api.SavePrEvent(evt.PullRequest, prs, fs)
     if err != nil {
@@ -183,21 +184,23 @@ func cleanTmp(dir string) error {
 func stripRoot(root string, pairs []clone.ClonePair) []clone.ClonePair {
     ret := make([]clone.ClonePair, len(pairs))
     for i, pair := range pairs {
-        pair.First.Filename = pair.First.Filename[len(root):]
-        pair.Second.Filename = pair.Second.Filename[len(root):]
+        pair.First.Filename = pair.First.Filename[len(root)+1:] // +1 so the filenames aren't rooted
+        pair.Second.Filename = pair.Second.Filename[len(root)+1:]
         ret[i] = pair
     }
     return ret
 }
 
+// processFileset reads each entry in the fileset and returns a File
+// with relative path and content
 func processFileset(root string, fileset map[string]bool) []api.File {
 	ret := make([]api.File, 0)
 	for file := range fileset {
-		content, err := ioutil.ReadFile(path.Join(root,file))
+		content, err := ioutil.ReadFile(file)
 		if err != nil {
 			log.Println("Error reading file")
 		}
-		ret = append(ret, api.File{Path: file, Content: content})
+        ret = append(ret, api.File{Path: file[len(root)+1:], Content: content})
 	}
 	return ret
 }
