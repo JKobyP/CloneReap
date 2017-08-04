@@ -1,4 +1,4 @@
-package main
+package hookserver
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"strings"
 
 	"github.com/google/go-github/github"
 	"github.com/jkobyp/clonereap/api"
@@ -25,13 +26,17 @@ const (
 
 func HookServer(w http.ResponseWriter, req *http.Request) {
 	io.WriteString(w, "hello, world!\n")
+	if !strings.Contains(req.Header.Get("User-Agent"), "GitHub-Hookshot") {
+		log.Printf("Received non-github request: %s", req.RemoteAddr)
+		return
+	}
 	hook, err := githubhook.Parse([]byte(Secret), req)
 	if err != nil {
 		log.Printf("%v", errors.Wrap(err, "parsing githubhook"))
+		log.Printf("%v", req)
 		return
 	}
-	log.Printf("Request:\n %v\n", req)
-	log.Printf("Hook Event: \n %v\n", hook.Event)
+	log.Printf("Hook event received!: \n %v\n", hook.Event)
 	err = handleEvent(hook.Event, hook.Payload)
 	if err != nil {
 		log.Printf("%v", errors.Wrap(err, "handling event"))
@@ -148,7 +153,7 @@ func PREvent(payload []byte) error {
 
 	// Consider only the clones that are in the diff
 	relPairs := make([]clone.ClonePair, 0) // absolute
-	relFiles := make(map[string]bool) // absolute
+	relFiles := make(map[string]bool)      // absolute
 	for _, pair := range clonePairs {
 		contains := false
 		for _, cfile := range files {
@@ -166,29 +171,29 @@ func PREvent(payload []byte) error {
 
 	// Create api.File for reach relevant clonepair
 	fs := processFileset(root, relFiles) // relative
-    prs := stripRoot(root, relPairs)    // relative
+	prs := stripRoot(root, relPairs)     // relative
 
 	err = api.SavePrEvent(evt.PullRequest, prs, fs)
-    if err != nil {
-        log.Printf("%s", err)
-    }
-    err = cleanTmp(tmpdir)
+	if err != nil {
+		log.Printf("%s", err)
+	}
+	err = cleanTmp(tmpdir)
 
 	return err
 }
 
 func cleanTmp(dir string) error {
-    return os.RemoveAll(dir)
+	return os.RemoveAll(dir)
 }
 
 func stripRoot(root string, pairs []clone.ClonePair) []clone.ClonePair {
-    ret := make([]clone.ClonePair, len(pairs))
-    for i, pair := range pairs {
-        pair.First.Filename = pair.First.Filename[len(root)+1:] // +1 so the filenames aren't rooted
-        pair.Second.Filename = pair.Second.Filename[len(root)+1:]
-        ret[i] = pair
-    }
-    return ret
+	ret := make([]clone.ClonePair, len(pairs))
+	for i, pair := range pairs {
+		pair.First.Filename = pair.First.Filename[len(root)+1:] // +1 so the filenames aren't rooted
+		pair.Second.Filename = pair.Second.Filename[len(root)+1:]
+		ret[i] = pair
+	}
+	return ret
 }
 
 // processFileset reads each entry in the fileset and returns a File
@@ -200,7 +205,7 @@ func processFileset(root string, fileset map[string]bool) []api.File {
 		if err != nil {
 			log.Println("Error reading file")
 		}
-        ret = append(ret, api.File{Path: file[len(root)+1:], Content: content})
+		ret = append(ret, api.File{Path: file[len(root)+1:], Content: content})
 	}
 	return ret
 }
